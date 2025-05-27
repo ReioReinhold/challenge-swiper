@@ -19,5 +19,11 @@
     "react-dom": "^18.2.0",
     "typescript": "^5.2.2",
     "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@react-spring/web": "^9.7.5",
+    "firebase": "^11.8.1",
+    "framer-motion": "^12.15.0",
+    "react-tinder-card": "^1.6.4"
   }
 }
