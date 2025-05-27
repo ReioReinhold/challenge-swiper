@@ -11,13 +11,13 @@ import {
   increment
 } from 'firebase/firestore';
 
-
-
 function App() {
   const [challenges, setChallenges] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [lastDirection, setLastDirection] = useState(null);
 
-  const [lastDirection, setLastDirection] = useState(null); // 👈 NEW
+  // Debug log
+  console.log('Index:', currentIndex, 'Challenges:', challenges.length);
 
 
   useEffect(() => {
