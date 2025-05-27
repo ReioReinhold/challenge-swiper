@@ -15,6 +15,7 @@ function App() {
   const [challenges, setChallenges] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lastDirection, setLastDirection] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // Debug log
   console.log('Index:', currentIndex, 'Challenges:', challenges.length);
@@ -29,6 +30,7 @@ function App() {
       }));
       console.log('Fetched challenges:', data);
       setChallenges(data);
+      setLoading(false);
     };
     fetchChallenges();
   }, []);
@@ -51,7 +53,9 @@ function App() {
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', marginTop: '80px' }}>
-      {currentIndex >= challenges.length ? (
+      {loading ? (
+        <h2>Loading challenges...</h2>
+      ) : currentIndex >= challenges.length ? (
         <h2>No more challenges!</h2>
       ) : (
       <TinderCard
