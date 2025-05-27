@@ -24,10 +24,17 @@ function App() {
   useEffect(() => {
     const fetchChallenges = async () => {
       const querySnapshot = await getDocs(collection(db, 'challenges'));
-      const data = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const data = querySnapshot.docs.map(doc => {
+        const docData = doc.data();
+        // Handle potential space in field name
+        const text = docData.text || docData[' text'] || docData['text'];
+        return {
+          id: doc.id,
+          text: text,
+          yesCount: docData.yesCount || 0,
+          noCount: docData.noCount || 0
+        };
+      });
       console.log('Fetched challenges:', data);
       setChallenges(data);
       setLoading(false);
