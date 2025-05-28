@@ -10,12 +10,14 @@ import {
   doc,
   updateDoc,
   increment,
-  addDoc
+  addDoc,
+  getDoc,
+  setDoc
 } from 'firebase/firestore';
 
 const Leaderboard = ({ challenges }) => {
   const sorted = [...challenges].map(c => {
-    const total = c.yesCount + c.noCount;
+    const total = c.yesCount + c.noCount + c.skipCount;
     const approvalRate = total > 0 ? ((c.yesCount / total) * 100).toFixed(1) : '0.0';
     return { ...c, total, approvalRate };
   }).sort((a, b) => b.approvalRate - a.approvalRate);
@@ -30,6 +32,7 @@ const Leaderboard = ({ challenges }) => {
               <th className="py-3 px-4">Challenge</th>
               <th className="py-3 px-2 text-center">✅</th>
               <th className="py-3 px-2 text-center">❌</th>
+              <th className="py-3 px-2 text-center">⏭️</th>
               <th className="py-3 px-2 text-center">Total</th>
               <th className="py-3 px-2 text-center">👍 %</th>
             </tr>
@@ -45,6 +48,7 @@ const Leaderboard = ({ challenges }) => {
                 </td>
                 <td className="py-3 px-2 text-center">{c.yesCount}</td>
                 <td className="py-3 px-2 text-center">{c.noCount}</td>
+                <td className="py-3 px-2 text-center">{c.skipCount || 0}</td>
                 <td className="py-3 px-2 text-center">{c.total}</td>
                 <td className="py-3 px-2 text-center">{c.approvalRate}%</td>
               </tr>
@@ -56,8 +60,10 @@ const Leaderboard = ({ challenges }) => {
   );
 };
 
-
-
+const thresholdReached = (yes, no, skips) => {
+  const total = yes + no + skips;
+  return total >= 5 && (no / total >= 0.8 || skips / total >= 0.8);
+};
 
 function App() {
   const [challenges, setChallenges] = useState([]);
@@ -71,6 +77,7 @@ function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [newChallenge, setNewChallenge] = useState('');
+  const [skipsLeft, setSkipsLeft] = useState(7);
 
   const fetchChallenges = async () => {
     try {
@@ -83,15 +90,18 @@ function App() {
           id: doc.id,
           text,
           yesCount: docData.yesCount || 0,
-          noCount: docData.noCount || 0
+          noCount: docData.noCount || 0,
+          skipCount: docData.skipCount || 0,
+          removed: docData.removed || false
         };
       });
 
-      const filtered = data.filter(ch => ch.text.trim() !== '');
+      const filtered = data.filter(ch => ch.text.trim() !== '' && !ch.removed);
       const shuffled = filtered.sort(() => 0.5 - Math.random());
       setChallenges(shuffled);
       setCurrentIndex(0);
       setShowConfetti(false);
+      setSkipsLeft(7); // ✅ Reset skips on restart
     } catch (error) {
       console.error('Error fetching challenges:', error);
     } finally {
@@ -99,9 +109,24 @@ function App() {
     }
   };
 
+
   useEffect(() => {
     fetchChallenges();
   }, []);
+
+  const updateSkip = async (challenge) => {
+    if (skipsLeft <= 0) return alert("You've reached the skip limit (7 skips).");
+    const challengeRef = doc(db, 'challenges', challenge.id);
+    await updateDoc(challengeRef, { skipCount: increment(1) });
+    const updated = [...challenges];
+    updated[currentIndex].skipCount = (updated[currentIndex].skipCount || 0) + 1;
+    setChallenges(updated);
+    setSkipsLeft(skipsLeft - 1);
+    if (thresholdReached(updated[currentIndex].yesCount, updated[currentIndex].noCount, updated[currentIndex].skipCount)) {
+      await updateDoc(challengeRef, { removed: true });
+    }
+    setCurrentIndex(prev => prev + 1);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -158,7 +183,7 @@ function App() {
       });
       setNewChallenge('');
       setShowSubmitForm(false);
-      alert('Thanks for your submission! 🎉 Your challenge is pending review.');
+      alert('Thanks for your submission! 🎉 Your challenge is pending review. You can submit another challenge if you want');
     }
   };
 
@@ -293,8 +318,31 @@ function App() {
                 <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
                   {challenges[currentIndex].text}
                 </div>
+                {skipsLeft > 0 && (
+                  <>
+                    <button
+                      onClick={() => updateSkip(challenges[currentIndex])}
+                      style={{
+                        marginTop: '20px',
+                        padding: '8px 16px',
+                        fontSize: '14px',
+                        border: '1px solid gray',
+                        borderRadius: '8px',
+                        backgroundColor: '#f9f9f9',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ⏭️ Skip (remaining: {skipsLeft})
+                    </button>
+                    <p style={{ fontSize: '12px', marginTop: '8px', color: '#777' }}>
+                      If a challenge feels confusing or poorly worded, feel free to skip it.
+                    </p>
+                  </>
+                )}
+
               </motion.div>
             </TinderCard>
+
           </>
         )}
       </div>
