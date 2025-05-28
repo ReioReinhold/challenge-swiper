@@ -102,6 +102,8 @@ function App() {
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [newChallenge, setNewChallenge] = useState('');
   const [skipsLeft, setSkipsLeft] = useState(7);
+  const [showLeaderboardOnly, setShowLeaderboardOnly] = useState(false);
+
 
   const fetchChallenges = async () => {
     try {
@@ -258,13 +260,29 @@ function App() {
         🔁 Restart
       </button>
 
+      <button 
+        onClick={() => setShowLeaderboardOnly(true)} 
+        style={{ position: 'absolute', top: 10, left: 120 }}
+      >
+        🏆 Leaderboard
+      </button>
+
+
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: '80px', position: 'relative', flexDirection: 'column', alignItems: 'center' }}>
         {showConfetti && <Confetti recycle={false} numberOfPieces={500} />}
-        {loading ? (
-          <h2>Loading challenges...</h2>
-        ) : currentIndex >= challenges.length ? (
-          <>
-            <h2>Thanks for swiping through the challenges! 🙌</h2>
+            {loading ? (
+              <h2>Loading challenges...</h2>
+            ) : showLeaderboardOnly ? (
+              <>
+                <h2>🏆 Challenge Leaderboard</h2>
+                <Leaderboard challenges={challenges} />
+                <button onClick={() => setShowLeaderboardOnly(false)} style={{ marginTop: '16px' }}>
+                  🔙 Back to Swiping
+                </button>
+              </>
+            ) : currentIndex >= challenges.length ? (
+              <>
+                <h2>Thanks for swiping through the challenges! 🙌</h2>
             <button onClick={() => setShowSubmitForm(true)} style={{ margin: '16px 0' }}>Submit Your Own Challenge</button>
             {showSubmitForm && (
               <div style={{ marginBottom: '20px', maxWidth: '400px', width: '100%' }}>
