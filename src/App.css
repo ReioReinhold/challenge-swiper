@@ -1,2 +1,15 @@
-main {
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Poppins', sans-serif;
 }
+
+<tr
+  key={i}
+  className="transition-all duration-300 cursor-pointer hover:bg-white/20 hover:scale-[1.01] hover:shadow-lg hover:backdrop-blur-md hover:text-white"
+>
+
+
+
