@@ -15,12 +15,36 @@ import {
   setDoc
 } from 'firebase/firestore';
 
+
+const resetAllChallenges = async () => {
+  const snapshot = await getDocs(collection(db, 'challenges'));
+  const updates = snapshot.docs.map(docSnap => {
+    const ref = doc(db, 'challenges', docSnap.id);
+    return updateDoc(ref, {
+      yesCount: 0,
+      noCount: 0,
+      skipCount: 0,
+      removed: false
+    });
+  });
+
+  await Promise.all(updates);
+  console.log("Leaderboard reset!");
+
+
+};
+
+
+
+
 const Leaderboard = ({ challenges }) => {
   const sorted = [...challenges].map(c => {
     const total = c.yesCount + c.noCount + c.skipCount;
-    const approvalRate = total > 0 ? ((c.yesCount / total) * 100).toFixed(1) : '0.0';
-    return { ...c, total, approvalRate };
-  }).sort((a, b) => b.approvalRate - a.approvalRate);
+    const approvalRate = total > 0 ? (c.yesCount / total) : 0;
+    const weightedScore = approvalRate * (1 - Math.exp(-total / 5));
+    return { ...c, total, approvalRate: (approvalRate * 100).toFixed(1), weightedScore };
+  }).sort((a, b) => b.weightedScore - a.weightedScore);
+
 
   return (
     <div className="leaderboard p-4 max-w-4xl mx-auto">
@@ -82,32 +106,44 @@ function App() {
   const fetchChallenges = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'challenges'));
-      const data = querySnapshot.docs.map(doc => {
-        const docData = doc.data();
-        const text = docData.text || '';
-        if (!text) console.warn(`⚠️ Missing text for challenge ID: ${doc.id}`);
-        return {
-          id: doc.id,
-          text,
-          yesCount: docData.yesCount || 0,
-          noCount: docData.noCount || 0,
-          skipCount: docData.skipCount || 0,
-          removed: docData.removed || false
-        };
-      });
+      const data = [];
 
-      const filtered = data.filter(ch => ch.text.trim() !== '' && !ch.removed);
-      const shuffled = filtered.sort(() => 0.5 - Math.random());
+      for (const docSnap of querySnapshot.docs) {
+        const docData = docSnap.data();
+        const text = docData.text || '';
+
+        // Auto-patch missing values
+        const challengeRef = doc(db, 'challenges', docSnap.id);
+        const updates = {};
+        if (docData.yesCount === undefined) updates.yesCount = 0;
+        if (docData.noCount === undefined) updates.noCount = 0;
+        if (docData.skipCount === undefined) updates.skipCount = 0;
+        if (docData.removed === undefined) updates.removed = false;
+        if (Object.keys(updates).length > 0) await updateDoc(challengeRef, updates);
+
+        if (text.trim() !== '' && !docData.removed) {
+          data.push({
+            id: docSnap.id,
+            text,
+            yesCount: docData.yesCount || 0,
+            noCount: docData.noCount || 0,
+            skipCount: docData.skipCount || 0,
+            removed: docData.removed || false
+          });
+        }
+      }
+
+      const shuffled = data.sort(() => 0.5 - Math.random());
       setChallenges(shuffled);
       setCurrentIndex(0);
       setShowConfetti(false);
-      setSkipsLeft(7); // ✅ Reset skips on restart
     } catch (error) {
       console.error('Error fetching challenges:', error);
     } finally {
       setLoading(false);
     }
   };
+
 
 
   useEffect(() => {
