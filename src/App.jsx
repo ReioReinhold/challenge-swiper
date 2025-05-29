@@ -241,7 +241,8 @@ function App() {
     return (
       <div style={{ backgroundColor, color: textColor, minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: 20, fontFamily }}>
         <h1>Welcome to Challenge Swiper 🎯</h1>
-        <p>Swipe through fun and meaningful challenges. Swipe right if you're up for it, left if not.</p>
+        <p>Swipe through fun and meaningful challenges.
+          <br></br>Swipe right if you're up for it, left if not. <br></br>You can also use arrow keys to swipe or YES/NO buttons to vote. <br></br>Let's see what the world thinks :) </p>
         <button onClick={() => setShowIntro(false)} style={{ marginTop: 20, padding: '10px 20px', fontFamily }}>
           Start
         </button>
