@@ -10,12 +10,10 @@ import {
   doc,
   updateDoc,
   increment,
-  addDoc,
-  getDoc,
-  setDoc
+  addDoc
 } from 'firebase/firestore';
 
-
+// Reset leaderboard counts
 const resetAllChallenges = async () => {
   const snapshot = await getDocs(collection(db, 'challenges'));
   const updates = snapshot.docs.map(docSnap => {
@@ -27,24 +25,20 @@ const resetAllChallenges = async () => {
       removed: false
     });
   });
-
   await Promise.all(updates);
   console.log("Leaderboard reset!");
-
-
 };
 
-
-
-
+// Leaderboard component
 const Leaderboard = ({ challenges }) => {
-  const sorted = [...challenges].map(c => {
-    const total = c.yesCount + c.noCount + c.skipCount;
-    const approvalRate = total > 0 ? (c.yesCount / total) : 0;
-    const weightedScore = approvalRate * (1 - Math.exp(-total / 5));
-    return { ...c, total, approvalRate: (approvalRate * 100).toFixed(1), weightedScore };
-  }).sort((a, b) => b.weightedScore - a.weightedScore);
-
+  const sorted = [...challenges]
+    .map(c => {
+      const total = c.yesCount + c.noCount + c.skipCount;
+      const approvalRate = total > 0 ? (c.yesCount / total) : 0;
+      const weightedScore = approvalRate * (1 - Math.exp(-total / 5));
+      return { ...c, total, approvalRate: (approvalRate * 100).toFixed(1), weightedScore };
+    })
+    .sort((a, b) => b.weightedScore - a.weightedScore);
 
   return (
     <div className="leaderboard p-4 max-w-4xl mx-auto">
@@ -84,6 +78,7 @@ const Leaderboard = ({ challenges }) => {
   );
 };
 
+// Utility to check if challenge should be auto-removed
 const thresholdReached = (yes, no, skips) => {
   const total = yes + no + skips;
   return total >= 5 && (no / total >= 0.8 || skips / total >= 0.8);
@@ -104,7 +99,7 @@ function App() {
   const [skipsLeft, setSkipsLeft] = useState(7);
   const [showLeaderboardOnly, setShowLeaderboardOnly] = useState(false);
 
-
+  // Fetch and patch challenges
   const fetchChallenges = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'challenges'));
@@ -113,10 +108,9 @@ function App() {
       for (const docSnap of querySnapshot.docs) {
         const docData = docSnap.data();
         const text = docData.text || '';
-
-        // Auto-patch missing values
         const challengeRef = doc(db, 'challenges', docSnap.id);
         const updates = {};
+
         if (docData.yesCount === undefined) updates.yesCount = 0;
         if (docData.noCount === undefined) updates.noCount = 0;
         if (docData.skipCount === undefined) updates.skipCount = 0;
@@ -135,8 +129,7 @@ function App() {
         }
       }
 
-      const shuffled = data.sort(() => 0.5 - Math.random());
-      setChallenges(shuffled);
+      setChallenges(data.sort(() => 0.5 - Math.random()));
       setCurrentIndex(0);
       setShowConfetti(false);
     } catch (error) {
@@ -146,85 +139,92 @@ function App() {
     }
   };
 
-
-
   useEffect(() => {
     fetchChallenges();
   }, []);
 
-  const updateSkip = async (challenge) => {
-    if (skipsLeft <= 0) return alert("You've reached the skip limit (7 skips).");
-    const challengeRef = doc(db, 'challenges', challenge.id);
-    await updateDoc(challengeRef, { skipCount: increment(1) });
-    const updated = [...challenges];
-    updated[currentIndex].skipCount = (updated[currentIndex].skipCount || 0) + 1;
-    setChallenges(updated);
-    setSkipsLeft(skipsLeft - 1);
-    if (thresholdReached(updated[currentIndex].yesCount, updated[currentIndex].noCount, updated[currentIndex].skipCount)) {
-      await updateDoc(challengeRef, { removed: true });
-    }
-    setCurrentIndex(prev => prev + 1);
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'ArrowRight') {
-        handleSwipe('right', challenges[currentIndex]);
-        handleCardLeftScreen();
-      } else if (e.key === 'ArrowLeft') {
-        handleSwipe('left', challenges[currentIndex]);
-        handleCardLeftScreen();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [challenges, currentIndex]);
-
+  // Voting handlers
   const handleSwipe = async (direction, challenge) => {
     setLastDirection(direction);
-    setEmoji(direction === 'right' ? '✅' : direction === 'left' ? '❌' : null);
+    setEmoji(direction === 'right' ? '✅' : '❌');
     setTrail(prev => [...prev, direction]);
-    setTimeout(() => setEmoji(null), 1000);
+    setTimeout(() => setEmoji(null), 800);
 
     const votedKey = `voted_${challenge.id}`;
     if (localStorage.getItem(votedKey)) return;
 
     const challengeRef = doc(db, 'challenges', challenge.id);
-    const updatedChallenges = [...challenges];
+    const updated = [...challenges];
 
-    if (direction === 'right') {
-      await updateDoc(challengeRef, { yesCount: increment(1) });
-      updatedChallenges[currentIndex].yesCount += 1;
-    } else if (direction === 'left') {
-      await updateDoc(challengeRef, { noCount: increment(1) });
-      updatedChallenges[currentIndex].noCount += 1;
+    try {
+      if (direction === 'right') {
+        await updateDoc(challengeRef, { yesCount: increment(1) });
+        updated[currentIndex].yesCount += 1;
+      } else if (direction === 'left') {
+        await updateDoc(challengeRef, { noCount: increment(1) });
+        updated[currentIndex].noCount += 1;
+      }
+
+      localStorage.setItem(votedKey, 'true');
+      setChallenges(updated);
+
+      // Auto-remove if threshold reached
+      if (thresholdReached(updated[currentIndex].yesCount, updated[currentIndex].noCount, updated[currentIndex].skipCount)) {
+        await updateDoc(challengeRef, { removed: true });
+      }
+    } catch (err) {
+      console.error(`Failed to record vote for ${challenge.text}:`, err);
+      alert('Error saving your vote. Please try again.');
     }
-
-    localStorage.setItem(votedKey, 'true');
-    setChallenges(updatedChallenges);
   };
 
   const handleCardLeftScreen = () => {
     setLastDirection(null);
     setCurrentIndex(prev => {
-      const nextIndex = prev + 1;
-      if (nextIndex >= challenges.length) setShowConfetti(true);
-      return nextIndex;
+      const next = prev + 1;
+      if (next >= challenges.length) setShowConfetti(true);
+      return next;
     });
   };
 
-  const submitChallenge = async () => {
-    if (newChallenge.trim()) {
-      await addDoc(collection(db, 'pendingChallenges'), {
-        text: newChallenge.trim()
-      });
-      setNewChallenge('');
-      setShowSubmitForm(false);
-      alert('Thanks for your submission! 🎉 Your challenge is pending review. You can submit another challenge if you want');
-    }
+  // Skip handler
+  const updateSkip = async (challenge) => {
+    if (skipsLeft <= 0) return alert("You've reached the skip limit.");
+    const challengeRef = doc(db, 'challenges', challenge.id);
+    await updateDoc(challengeRef, { skipCount: increment(1) });
+    const updated = [...challenges];
+    updated[currentIndex].skipCount += 1;
+    setChallenges(updated);
+    setSkipsLeft(skipsLeft - 1);
+    setCurrentIndex(prev => prev + 1);
   };
 
+  // Submit new challenge
+  const submitChallenge = async () => {
+    if (!newChallenge.trim()) return;
+    await addDoc(collection(db, 'pendingChallenges'), { text: newChallenge.trim() });
+    setNewChallenge('');
+    setShowSubmitForm(false);
+    alert('Thanks! Your challenge is pending review.');
+  };
+
+  // Key navigation
+  useEffect(() => {
+    const handleKey = e => {
+      if (e.key === 'ArrowRight') {
+        handleSwipe('right', challenges[currentIndex]);
+        handleCardLeftScreen();
+      }
+      if (e.key === 'ArrowLeft') {
+        handleSwipe('left', challenges[currentIndex]);
+        handleCardLeftScreen();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [challenges, currentIndex]);
+
+  // UI Colors & Fonts
   const backgroundColor = darkMode ? '#1e1e1e' : '#fff';
   const textColor = darkMode ? '#eee' : '#000';
   const fontFamily = "'Poppins', sans-serif";
@@ -236,167 +236,94 @@ function App() {
     document.head.appendChild(link);
   }, []);
 
+  // Intro screen
   if (showIntro) {
     return (
-      <div style={{ backgroundColor, color: textColor, minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '20px', textAlign: 'center', fontFamily }}>
+      <div style={{ backgroundColor, color: textColor, minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: 20, fontFamily }}>
         <h1>Welcome to Challenge Swiper 🎯</h1>
-        <p style={{ maxWidth: '400px' }}>
-          Swipe through fun and meaningful challenges. Swipe right ✅ if you're up for it, swipe left ❌ if you're not. Let's see what the world thinks!
-        </p>
-        <button onClick={() => setShowIntro(false)} style={{ marginTop: '20px', padding: '10px 20px', fontSize: '16px', fontFamily }}>
+        <p>Swipe through fun and meaningful challenges. Swipe right if you're up for it, left if not.</p>
+        <button onClick={() => setShowIntro(false)} style={{ marginTop: 20, padding: '10px 20px', fontFamily }}>
           Start
         </button>
       </div>
     );
   }
 
+  // Main render
   return (
-    <div style={{ backgroundColor, color: textColor, minHeight: '100vh', padding: '20px', transition: 'all 0.3s ease', fontFamily }}>
+    <div style={{ backgroundColor, color: textColor, minHeight: '100vh', padding: 20, transition: 'all 0.3s ease', fontFamily }}>
+      {/* Top Controls */}
       <button onClick={() => setDarkMode(!darkMode)} style={{ position: 'absolute', top: 10, right: 10 }}>
         {darkMode ? '🌞 Light Mode' : '🌙 Dark Mode'}
       </button>
+      <button onClick={fetchChallenges} style={{ position: 'absolute', top: 10, left: 10 }}>🔁 Restart</button>
+      <button onClick={() => setShowLeaderboardOnly(true)} style={{ position: 'absolute', top: 10, left: 120 }}>🏆 Leaderboard</button>
 
-      <button onClick={fetchChallenges} style={{ position: 'absolute', top: 10, left: 10 }}>
-        🔁 Restart
-      </button>
-
-      <button 
-        onClick={() => setShowLeaderboardOnly(true)} 
-        style={{ position: 'absolute', top: 10, left: 120 }}
-      >
-        🏆 Leaderboard
-      </button>
-
-
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '80px', position: 'relative', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 80 }}>
         {showConfetti && <Confetti recycle={false} numberOfPieces={500} />}
-            {loading ? (
-              <h2>Loading challenges...</h2>
-            ) : showLeaderboardOnly ? (
-              <>
-                <h2>🏆 Challenge Leaderboard</h2>
-                <Leaderboard challenges={challenges} />
-                <button onClick={() => setShowLeaderboardOnly(false)} style={{ marginTop: '16px' }}>
-                  🔙 Back to Swiping
-                </button>
-              </>
-            ) : currentIndex >= challenges.length ? (
-              <>
-                <h2>Thanks for swiping through the challenges! 🙌</h2>
+
+        {loading ? (
+          <h2>Loading challenges...</h2>
+        ) : showLeaderboardOnly ? (
+          <>  
+            <Leaderboard challenges={challenges} />
+            <button onClick={() => setShowLeaderboardOnly(false)} style={{ marginTop: 16 }}>🔙 Back</button>
+          </>
+        ) : currentIndex >= challenges.length ? (
+          <>  
+            <h2>Thanks for swiping! 🙌</h2>
             <button onClick={() => setShowSubmitForm(true)} style={{ margin: '16px 0' }}>Submit Your Own Challenge</button>
             {showSubmitForm && (
-              <div style={{ marginBottom: '20px', maxWidth: '400px', width: '100%' }}>
-                <textarea
-                  value={newChallenge}
-                  onChange={e => setNewChallenge(e.target.value)}
-                  placeholder="Write your challenge idea here..."
-                  style={{ width: '100%', padding: '10px', fontSize: '16px', borderRadius: '8px' }}
-                />
-                <button onClick={submitChallenge} style={{ marginTop: '10px', padding: '8px 16px' }}>Submit</button>
+              <div style={{ maxWidth: 400, width: '100%' }}>
+                <textarea value={newChallenge} onChange={e => setNewChallenge(e.target.value)} placeholder="Write your challenge..." style={{ width: '100%', padding: 10, fontSize: 16, borderRadius: 8 }} />
+                <button onClick={submitChallenge} style={{ marginTop: 10, padding: '8px 16px' }}>Submit</button>
               </div>
             )}
             <Leaderboard challenges={challenges} />
           </>
         ) : (
-          <>
-            <div style={{ marginBottom: '10px', fontSize: '16px', fontWeight: 'bold', color: textColor }}>
+          <>  
+            {/* Progress Bar */}
+            <div style={{ marginBottom: 10, textAlign: 'center' }}>
               Challenge {currentIndex + 1} of {challenges.length}
-              <div style={{ height: '4px', width: '320px', background: '#ddd', borderRadius: '2px', overflow: 'hidden', marginTop: '4px' }}>
-                <motion.div
-                  initial={false}
-                  animate={{ width: `${(currentIndex / (challenges.length - 1)) * 100}%` }}
-                  transition={{ duration: 0.3 }}
-                  style={{ height: '100%', background: '#4caf50' }}
-                />
+              <div style={{ height: 4, width: 320, background: '#ddd', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+                <motion.div initial={false} animate={{ width: `${(currentIndex / (challenges.length - 1)) * 100}%` }} transition={{ duration: 0.3 }} style={{ height: '100%', background: '#4caf50' }} />
               </div>
             </div>
 
+            {/* Swipe Emoji Trail */}
             <AnimatePresence>
-              {emoji && (
-                <motion.div
-                  initial={{ opacity: 0, y: 0 }}
-                  animate={{ opacity: 1, y: -30 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  style={{ fontSize: '40px', position: 'absolute', top: '50px' }}
-                >
-                  {emoji}
-                </motion.div>
-              )}
+              {emoji && <motion.div initial={{ opacity: 0, y: 0 }} animate={{ opacity: 1, y: -30 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4 }} style={{ fontSize: 40, position: 'absolute', top: 50 }}>{emoji}</motion.div>}
             </AnimatePresence>
-
             {trail.map((dir, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0.5, scale: 0.8 }}
-                animate={{ opacity: 0, scale: 1.2, x: dir === 'right' ? 200 : -200 }}
-                transition={{ duration: 0.6 }}
-                style={{
-                  position: 'absolute',
-                  top: '240px',
-                  fontSize: '24px',
-                  color: dir === 'right' ? 'green' : 'red'
-                }}
-              >
-                {dir === 'right' ? '✅' : '❌'}
-              </motion.div>
+              <motion.div key={i} initial={{ opacity: 0.5, scale: 0.8 }} animate={{ opacity: 0, scale: 1.2, x: dir === 'right' ? 200 : -200 }} transition={{ duration: 0.6 }} style={{ position: 'absolute', top: 240, fontSize: 24, color: dir === 'right' ? 'green' : 'red' }}>{dir === 'right' ? '✅' : '❌'}</motion.div>
             ))}
 
+            {/* Tinder Card */}
             <TinderCard
               key={challenges[currentIndex].id}
-              onSwipe={(dir) => handleSwipe(dir, challenges[currentIndex])}
+              onSwipe={dir => handleSwipe(dir, challenges[currentIndex])}
               onCardLeftScreen={handleCardLeftScreen}
               preventSwipe={['up', 'down']}
+              swipeRequirementType="position"
+              swipeThreshold={50}
             >
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.5, opacity: 0, x: lastDirection === 'right' ? 200 : -200 }}
-                transition={{ duration: 0.4, ease: 'easeInOut' }}
-                style={{
-                  position: 'relative',
-                  backgroundColor: backgroundColor,
-                  color: textColor,
-                  width: '320px',
-                  height: '460px',
-                  padding: '20px',
-                  borderRadius: '16px',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  fontSize: '20px',
-                  textAlign: 'center'
-                }}
-              >
-                <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
-                  {challenges[currentIndex].text}
-                </div>
+              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0, x: lastDirection === 'right' ? 200 : -200 }} transition={{ duration: 0.4, ease: 'easeInOut' }} style={{ position: 'relative', backgroundColor, color: textColor, width: 320, height: 460, padding: 20, borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+                <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>{challenges[currentIndex].text}</div>
                 {skipsLeft > 0 && (
-                  <>
-                    <button
-                      onClick={() => updateSkip(challenges[currentIndex])}
-                      style={{
-                        marginTop: '20px',
-                        padding: '8px 16px',
-                        fontSize: '14px',
-                        border: '1px solid gray',
-                        borderRadius: '8px',
-                        backgroundColor: '#f9f9f9',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      ⏭️ Skip (remaining: {skipsLeft})
-                    </button>
-                    <p style={{ fontSize: '12px', marginTop: '8px', color: '#777' }}>
-                      If a challenge feels confusing or poorly worded, feel free to skip it.
-                    </p>
+                  <>  
+                    <button onClick={() => updateSkip(challenges[currentIndex])} style={{ marginTop: 20, padding: '8px 16px', fontSize: 14, border: '1px solid gray', borderRadius: 8, backgroundColor: '#f9f9f9', cursor: 'pointer' }}>⏭️ Skip ({skipsLeft})</button>
+                    <p style={{ fontSize: 12, marginTop: 8, color: '#777' }}>Skip confusing or poorly worded challenges.</p>
                   </>
                 )}
-
               </motion.div>
             </TinderCard>
 
+            {/* Fallback Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: 320, marginTop: 10 }}>
+              <button onClick={() => { handleSwipe('left', challenges[currentIndex]); handleCardLeftScreen(); }} style={{ flex: 1, marginRight: 10, padding: '10px 0', borderRadius: 8, border: '1px solid #e74c3c', background: '#fff', cursor: 'pointer' }}>❌ No</button>
+              <button onClick={() => { handleSwipe('right', challenges[currentIndex]); handleCardLeftScreen(); }} style={{ flex: 1, marginLeft: 10, padding: '10px 0', borderRadius: 8, border: '1px solid #2ecc71', background: '#fff', cursor: 'pointer' }}>✅ Yes</button>
+            </div>
           </>
         )}
       </div>
